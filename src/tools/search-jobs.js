@@ -3,6 +3,16 @@ import { searchParams } from '../schemas/searchParamsSchema.js';
 import { execSync } from 'node:child_process';
 import { z } from 'zod';
 import changeCase from 'change-case-object';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import { dirname } from 'path';
+import fs from 'fs';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, '../..');
+const JOBSPY_DIR = path.join(PROJECT_ROOT, 'jobspy');
+const VENV_DIR = path.join(PROJECT_ROOT, 'venv');
 
 /**
  * @typedef {Object} JobSearchParams
@@ -62,7 +72,7 @@ export const searchJobsTool = (server, sseManager) =>
         }
 
         // Execute job search
-        const result = searchJobsHandler(params);
+        const result = await searchJobsHandler(params);
 
         // Clean up progress interval
         if (progressInterval) {
@@ -145,7 +155,7 @@ function convertToISODate(dateStr) {
  * @param {JobSearchParams} params - Search parameters
  * @returns {Promise<object>} Search results
  */
-export function searchJobsHandler(params) {
+export async function searchJobsHandler(params) {
   let result;
   try {
     logger.info('Starting job search with parameters', { params });
@@ -171,12 +181,40 @@ export function searchJobsHandler(params) {
 
     logger.info('Validated parameters', { validatedParams });
 
+    // Check if Python and JobSpy are available
+    try {
+      execSync('python3 --version', { stdio: 'pipe' });
+    } catch (error) {
+      try {
+        execSync('python --version', { stdio: 'pipe' });
+      } catch (error2) {
+        throw new Error('Python not found. Please install Python 3.x');
+      }
+    }
+
+    // Check if jobspy directory exists
+    try {
+      if (!fs.existsSync(JOBSPY_DIR)) {
+        throw new Error(`JobSpy directory not found at ${JOBSPY_DIR}`);
+      }
+      if (!fs.existsSync(path.join(JOBSPY_DIR, 'main.py'))) {
+        throw new Error(`main.py not found in ${JOBSPY_DIR}`);
+      }
+    } catch (error) {
+      if (error.message.includes('JobSpy directory') || error.message.includes('main.py')) {
+        throw error;
+      }
+      throw new Error('File system check failed');
+    }
+
     const args = buildCommandArgs(validatedParams);
-    const cmd = `sudo docker run jobspy ${args.join(' ')}`;
-    logger.info(`Spawning process with args: ${cmd}`);
+    const pythonCmd = getPythonCommand();
+    const cmd = `${pythonCmd} main.py ${args.join(' ')}`;
+    logger.info(`Spawning process with command: ${cmd}`);
+    logger.info(`Working directory: ${JOBSPY_DIR}`);
 
     const timeout = params.timeout || 60000; // Default timeout of 60 seconds
-    result = execSync(cmd, { timeout }).toString();
+    result = execSync(cmd, { timeout, cwd: JOBSPY_DIR }).toString();
 
     const parsedData = JSON.parse(result);
 
@@ -204,6 +242,37 @@ export function searchJobsHandler(params) {
       result,
     });
     throw error;
+  }
+}
+
+/**
+ * Get the appropriate Python command, preferring virtual environment
+ * @returns {string} Python command
+ */
+function getPythonCommand() {
+  
+  // Check if virtual environment exists
+  const venvPython = path.join(VENV_DIR, 'bin', 'python');
+  const venvPython3 = path.join(VENV_DIR, 'bin', 'python3');
+  
+  if (fs.existsSync(venvPython3)) {
+    return venvPython3;
+  }
+  if (fs.existsSync(venvPython)) {
+    return venvPython;
+  }
+  
+  // Fall back to system Python
+  try {
+    execSync('python3 --version', { stdio: 'pipe' });
+    return 'python3';
+  } catch (error) {
+    try {
+      execSync('python --version', { stdio: 'pipe' });
+      return 'python';
+    } catch (error2) {
+      throw new Error('Python not found. Please install Python 3.x or run setup-local.sh');
+    }
   }
 }
 

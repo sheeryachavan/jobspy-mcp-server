@@ -50,7 +50,13 @@ export const searchParams = {
     .describe('Search term for jobs')
     .default('software engineer'),
   location: z.string().describe('Location for job search').default('remote'),
-  distance: z.number().int().describe('Distance in miles').default(50),
+  distance: z
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) ? 50 : num;
+    })
+    .default(50),
   jobType: z
     .enum(['fulltime', 'parttime', 'internship', 'contract'])
     .nullable()
@@ -62,10 +68,12 @@ export const searchParams = {
     .describe('Google specific search term')
     .default(null),
   resultsWanted: z
-    .number()
-    .int()
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) || num === 0 ? 20 : num;
+    })
     .describe('Number of results wanted')
-    .transform((val) => (val === 0 ? 20 : val))
     .default(20),
   easyApply: z
     .boolean()
@@ -76,21 +84,27 @@ export const searchParams = {
     .describe('Format type of the job descriptions')
     .default('markdown'),
   offset: z
-    .number()
-    .int()
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) ? 0 : num;
+    })
     .describe('Starts the search from an offset')
     .default(0),
   hoursOld: z
-    .number()
-    .int()
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) || num === 0 ? 72 : num;
+    })
     .describe('How many hours old the jobs can be')
-    .transform((val) => (val === 0 ? 72 : val))
     .default(72),
   verbose: z
-    .number()
-    .int()
-    .min(0)
-    .max(2)
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) ? 2 : Math.max(0, Math.min(2, num));
+    })
     .describe(
       'Controls verbosity (0=errors only, 1=errors+warnings, 2=all logs)'
     )
@@ -172,8 +186,11 @@ export const searchParams = {
     .default(null),
   format: z.enum(['json', 'csv']).describe('Output format').default('json'),
   timeout: z
-    .number()
-    .int()
+    .union([z.number(), z.string()])
+    .transform((val) => {
+      const num = typeof val === 'string' ? parseInt(val, 10) : val;
+      return isNaN(num) ? 120000 : num;
+    })
     .describe('Timeout in milliseconds for the job search process')
     .default(120000),
 };
